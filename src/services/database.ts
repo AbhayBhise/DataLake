@@ -57,6 +57,9 @@ export const DatabaseService = {
       `);
       // Migration: add new columns if they don't exist (safe ALTER TABLE)
       try {
+        await db.executeSql(`ALTER TABLE attendance ADD COLUMN sequence_hash TEXT DEFAULT '';`);
+      } catch (_) { /* Column already exists — ignore */ }
+      try {
         await db.executeSql(`ALTER TABLE attendance ADD COLUMN inference_ms REAL DEFAULT 0;`);
       } catch (_) { /* Column already exists — ignore */ }
       try {

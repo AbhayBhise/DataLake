@@ -42,6 +42,8 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const slideAnim   = useRef(new Animated.Value(60)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
+  const timerRef = useRef<any>(null);
+
   const checkPermission = useCallback(async () => {
     const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
     setHasCamPerm(granted);
@@ -55,7 +57,12 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       Animated.spring(slideAnim, { toValue: 0, tension: 50, friction: 9, useNativeDriver: true }),
       Animated.timing(opacityAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
     ]).start();
-    return () => { Tts.stop(); };
+    return () => {
+      Tts.stop();
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
   }, [checkPermission, slideAnim, opacityAnim]);
 
   useEffect(() => {
@@ -130,10 +137,20 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     setCaptureReady(false);
     setPhase('camera');
     Tts.speak('Position your face inside the oval guide and tap capture when ready.');
-    setTimeout(() => setCaptureReady(true), 1500);
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      setCaptureReady(true);
+      timerRef.current = null;
+    }, 1500);
   };
 
   const cancelCamera = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
     setPhase('form');
     setCaptureReady(false);
     Tts.stop();

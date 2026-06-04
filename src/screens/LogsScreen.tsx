@@ -139,7 +139,9 @@ const LogsScreen: React.FC<Props> = ({ navigation }) => {
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: Colors.brand.indigo }]}>{successRate}%</Text>
+          <Text style={[styles.statValue, { color: Colors.brand.indigo }]}>
+            {successRate}{stats.total > 0 ? '%' : ''}
+          </Text>
           <Text style={styles.statLabel}>Accuracy</Text>
         </View>
         {avgInferenceMs > 0 && (

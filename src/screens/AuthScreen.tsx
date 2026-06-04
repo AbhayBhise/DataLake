@@ -95,6 +95,22 @@ const AuthScreen: React.FC<Props> = ({ navigation }) => {
   const slideAnim  = useRef(new Animated.Value(60)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
+  const timersRef = useRef<any[]>([]);
+
+  const safeTimeout = useCallback((cb: () => void, delay: number) => {
+    const timer = setTimeout(() => {
+      cb();
+      timersRef.current = timersRef.current.filter((t) => t !== timer);
+    }, delay);
+    timersRef.current.push(timer);
+    return timer;
+  }, []);
+
+  const clearAllTimers = useCallback(() => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+  }, []);
+
   // ── Permission check ───────────────────────────────────────────────────────
   const checkPermission = useCallback(async () => {
     const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
@@ -127,8 +143,11 @@ const AuthScreen: React.FC<Props> = ({ navigation }) => {
     Tts.setDefaultLanguage('en-IN');
     Tts.setDefaultRate(0.5);
     Tts.setDefaultPitch(1.1);
-    return () => { Tts.stop(); };
-  }, []);
+    return () => {
+      Tts.stop();
+      clearAllTimers();
+    };
+  }, [clearAllTimers]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const speak = (text: string) => {
@@ -204,6 +223,7 @@ const AuthScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const cancelCamera = () => {
+    clearAllTimers();
     fpReady.value = false;
     Tts.stop();
     setPhase('input');
@@ -221,7 +241,7 @@ const AuthScreen: React.FC<Props> = ({ navigation }) => {
     setPrompt(`${first.icon}  ${first.label}`);
     speak(first.ttsPrompt);
     // Small delay before activating frame processor
-    setTimeout(() => { fpReady.value = true; }, 200);
+    safeTimeout(() => { fpReady.value = true; }, 200);
   };
 
   // ── Face detection (worklet — runs on background thread) ─────────────────
@@ -257,9 +277,9 @@ const AuthScreen: React.FC<Props> = ({ navigation }) => {
       Tts.stop();
       Tts.speak(next.ttsPrompt);
       // Re-enable after 600ms debounce
-      setTimeout(() => { fpReady.value = true; }, 600);
+      safeTimeout(() => { fpReady.value = true; }, 600);
     }
-  }, [scanStep, sequence, seqStep, fpReady, curStepIdx, runFaceMatchRef]);
+  }, [scanStep, sequence, seqStep, fpReady, curStepIdx, runFaceMatchRef, safeTimeout]);
 
   const frameProcessor = useFrameProcessor((frame) => {
     'worklet';
@@ -345,7 +365,7 @@ const AuthScreen: React.FC<Props> = ({ navigation }) => {
         setPrompt('✓ Authentication Successful!');
         speak('Authentication successful. Welcome.');
 
-        setTimeout(() => {
+        safeTimeout(() => {
           navigation.goBack();
         }, 2000);
 
@@ -365,7 +385,7 @@ const AuthScreen: React.FC<Props> = ({ navigation }) => {
         setPrompt('✗ Face match failed');
         speak('Access denied. Face did not match.');
 
-        setTimeout(() => {
+        safeTimeout(() => {
           setScanStep('align');
           setPrompt('Align your face inside the oval');
           setProcessing(false);

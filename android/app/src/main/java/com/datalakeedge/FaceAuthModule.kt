@@ -50,9 +50,41 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
 
     private var tflite: Interpreter? = null
 
+    private var hasNativeLib = false
+
     init {
+        try {
+            System.loadLibrary("datalakeedge_native")
+            hasNativeLib = true
+            Log.i(TAG, "[Init] Native C++ library datalakeedge_native loaded successfully")
+        } catch (e: Exception) {
+            hasNativeLib = false
+            Log.e(TAG, "[Init] Failed to load native library datalakeedge_native: ${e.message}")
+        }
         tflite = initInterpreter()
     }
+
+    // ─── Native JNI Methods ────────────────────────────────────────────────────
+    private external fun preprocessYuvFrame(
+        yBuffer: java.nio.ByteBuffer,
+        uvBuffer: java.nio.ByteBuffer,
+        width: Int,
+        height: Int,
+        yRowStride: Int,
+        uvRowStride: Int,
+        uvPixelStride: Int
+    ): FloatArray?
+
+    private external fun preprocessRgbaFrame(
+        rgbaBuffer: java.nio.ByteBuffer,
+        width: Int,
+        height: Int
+    ): FloatArray?
+
+    private external fun cosineSimilarityNative(
+        embA: FloatArray,
+        embB: FloatArray
+    ): Float
 
     /** Load TFLite model and initialise with NNAPI delegate (falls back to CPU/XNNPACK). */
     private fun initInterpreter(): Interpreter? {
@@ -119,10 +151,7 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
                 return
             }
 
-            // Apply brightness normalization to handle outdoor/sunlight conditions
-            val normalized = normalizeBrightness(cropped)
-
-            val embedding = getEmbedding(normalized)
+            val embedding = getEmbedding(cropped)
             if (embedding == null) {
                 Log.e(TAG, "[register] Embedding extraction failed")
                 promise.resolve(false)
@@ -176,7 +205,7 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
                 return
             }
 
-            // 2. Crop + normalize
+            // 2. Crop
             val cropped = cropFace(rotatedBitmap, face.boundingBox)
             if (cropped == null) {
                 response.putBoolean("success", false)
@@ -184,11 +213,10 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
                 promise.resolve(response)
                 return
             }
-            val normalized = normalizeBrightness(cropped)
 
-            // 3. Extract embedding
+            // 3. Extract embedding (handles CLAHE and normalization natively or via Kotlin fallback)
             val inferenceStart = System.currentTimeMillis()
-            val liveEmbedding = getEmbedding(normalized)
+            val liveEmbedding = getEmbedding(cropped)
             val inferenceMs = (System.currentTimeMillis() - inferenceStart).toFloat()
 
             if (liveEmbedding == null) {
@@ -379,32 +407,65 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
      */
     private fun getEmbedding(faceBitmap: Bitmap): FloatArray? {
         val interp = tflite ?: return null
+        if (hasNativeLib) {
+            try {
+                val rgbaBuffer = java.nio.ByteBuffer.allocateDirect(faceBitmap.width * faceBitmap.height * 4)
+                    .order(java.nio.ByteOrder.nativeOrder())
+                faceBitmap.copyPixelsToBuffer(rgbaBuffer)
+                rgbaBuffer.rewind()
+
+                val inputFloats = preprocessRgbaFrame(rgbaBuffer, faceBitmap.width, faceBitmap.height)
+                if (inputFloats != null) {
+                    val imgData = ByteBuffer.allocateDirect(MODEL_INPUT_W * MODEL_INPUT_H * 3 * 4)
+                        .order(ByteOrder.nativeOrder())
+                    imgData.asFloatBuffer().put(inputFloats)
+                    val output = Array(1) { FloatArray(EMBED_DIM) }
+                    interp.run(imgData, output)
+                    return output[0]
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "[embeddingJNI] Exception, falling back to Kotlin: ${e.message}")
+            }
+        }
+
+        // Fallback Kotlin path
         return try {
-            val resized = Bitmap.createScaledBitmap(faceBitmap, MODEL_INPUT_W, MODEL_INPUT_H, true)
+            // Brightness normalize first
+            val normalized = normalizeBrightness(faceBitmap)
+            val resized = Bitmap.createScaledBitmap(normalized, MODEL_INPUT_W, MODEL_INPUT_H, true)
             val imgData = ByteBuffer.allocateDirect(MODEL_INPUT_W * MODEL_INPUT_H * 3 * 4)
                 .order(ByteOrder.nativeOrder())
 
             val intValues = IntArray(MODEL_INPUT_W * MODEL_INPUT_H)
             resized.getPixels(intValues, 0, MODEL_INPUT_W, 0, 0, MODEL_INPUT_W, MODEL_INPUT_H)
 
-            // Normalize: (pixel - 127.5) / 128 → range [-1, 1]
+            // Normalize: (pixel - 127.5) / 128 → range [-1, 1] (fixed operator precedence bug)
             for (pv in intValues) {
                 imgData.putFloat(((pv shr 16 and 0xFF) - 127.5f) / 128.0f)
                 imgData.putFloat(((pv shr  8 and 0xFF) - 127.5f) / 128.0f)
-                imgData.putFloat(( pv         and 0xFF)  - 127.5f  / 128.0f)
+                imgData.putFloat(((pv         and 0xFF) - 127.5f) / 128.0f)
             }
 
             val output = Array(1) { FloatArray(EMBED_DIM) }
             interp.run(imgData, output)
             output[0]
         } catch (e: Exception) {
-            Log.e(TAG, "[embedding] Exception: ${e.message}")
+            Log.e(TAG, "[embeddingKotlin] Exception: ${e.message}")
             null
         }
     }
 
     /** L2-normalised cosine similarity between two embedding vectors. */
     private fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
+        if (hasNativeLib) {
+            try {
+                return cosineSimilarityNative(a, b)
+            } catch (e: Exception) {
+                Log.e(TAG, "[cosineJNI] Exception, falling back to Kotlin: ${e.message}")
+            }
+        }
+
+        // Fallback Kotlin path
         var dot = 0f; var normA = 0f; var normB = 0f
         for (i in a.indices) {
             dot   += a[i] * b[i]
