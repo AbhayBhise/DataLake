@@ -279,11 +279,14 @@ static void normalize_rgb_to_float(
     const float32x4_t v_mean  = vdupq_n_f32(NORM_MEAN);
     const float32x4_t v_scale = vdupq_n_f32(1.f / NORM_SCALE);
     int i = 0;
-    for (; i + 4 <= n; i += 4) {
-        float32x4_t f = vcvtq_f32_u32(vld1q_u32((const uint32_t*)(rgb + i)));
+    for (; i + 8 <= n; i += 4) {
+        uint8x8_t r_u8 = vld1_u8(rgb + i);
+        float32x4_t f = vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(r_u8))));
         vst1q_f32(out + i, vmulq_f32(vsubq_f32(f, v_mean), v_scale));
     }
-    for (; i < n; ++i) out[i] = (rgb[i] - NORM_MEAN) / NORM_SCALE;
+    for (; i < n; ++i) {
+        out[i] = (rgb[i] - NORM_MEAN) / NORM_SCALE;
+    }
 #else
     for (int i = 0; i < n; ++i)
         out[i] = (rgb[i] - NORM_MEAN) / NORM_SCALE;
