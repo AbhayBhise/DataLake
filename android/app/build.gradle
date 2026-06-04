@@ -84,6 +84,11 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++20", "-include", "${project.projectDir}/../../node_modules/react-native-safe-area-context/android/src/main/jni/std_format_patch.h"
+            }
+        }
     }
     signingConfigs {
         debug {
@@ -105,6 +110,9 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+    aaptOptions {
+        noCompress "tflite"
+    }
 }
 
 dependencies {
@@ -116,4 +124,15 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Google ML Kit Face Detection
+    implementation 'com.google.mlkit:face-detection:16.1.6'
+
+    // TensorFlow Lite core + delegates
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+    // NNAPI delegate — enables hardware neural accelerators (DSP/NPU)
+    // Falls back to XNNPACK CPU SIMD automatically on unsupported devices
+    implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-api:2.14.0'
 }
