@@ -1,21 +1,30 @@
 # ─── CMakeLists.txt ────────────────────────────────────────────────────────────
-# DatalakeEdge — Native C++ JNI Build Configuration
-# Builds the face_processor shared library for NHAI Hackathon 7.0
+# DatalakeEdge — Native C++ JNI Build Configuration (Customized template)
+# Builds the appmodules library including custom face processing and standard JNI loader.
 # ────────────────────────────────────────────────────────────────────────────────
 
-cmake_minimum_required(VERSION 3.22.1)
-project("datalakeedge_native" LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.13)
 
-# ── C++ standard ──────────────────────────────────────────────────────────────
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# Define the library name. React Native expects "appmodules" under the New Architecture.
+project(appmodules)
 
-# ── Compiler flags ─────────────────────────────────────────────────────────────
-# -O3          : maximum optimisation
-# -march=armv8-a+simd : target ARM64 with NEON (SIMD) extensions
-# -ffast-math  : allow aggressive FP optimisations (safe for image processing)
-# -DANDROID_PLATFORM=android-26 : minimum API level (NNAPI requires 27+)
-add_compile_options(
+# Custom Windows Path handling for REACT_ANDROID_DIR
+if(CMAKE_HOST_WIN32)
+    string(REPLACE "\\" "/" REACT_ANDROID_DIR ${REACT_ANDROID_DIR})
+endif()
+
+# This file includes all the necessary to build your application with the New Architecture.
+include(${REACT_ANDROID_DIR}/cmake-utils/ReactNative-application.cmake)
+
+# Add our custom face_processor C++ file to the appmodules target.
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    face_processor.cpp
+)
+
+# Compiler optimization and standards setup
+target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_20)
+
+target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
     -O3
     -ffast-math
     -ffunction-sections
@@ -25,37 +34,17 @@ add_compile_options(
 )
 
 if(ANDROID_ABI STREQUAL "arm64-v8a")
-    add_compile_options(-march=armv8-a+simd)
-    message(STATUS "[datalakeedge] Building arm64-v8a with NEON SIMD")
+    target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -march=armv8-a+simd)
 elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
-    add_compile_options(-mfpu=neon -mfloat-abi=hard)
-    message(STATUS "[datalakeedge] Building armeabi-v7a with NEON")
-else()
-    message(STATUS "[datalakeedge] Building ${ANDROID_ABI} (scalar path)")
+    target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -mfpu=neon -mfloat-abi=softfp)
 endif()
 
-# ── Sources ────────────────────────────────────────────────────────────────────
-add_library(
-    datalakeedge_native     # Library name
-    SHARED                  # .so output
-    face_processor.cpp
-)
+# Link android JNI libraries
+find_library(android-lib android)
+find_library(log-lib     log)
 
-# ── Android system libraries ───────────────────────────────────────────────────
-find_library(android-lib android)   # ANativeWindow, AHardwareBuffer
-find_library(log-lib     log)       # __android_log_print
-
-# ── Link ───────────────────────────────────────────────────────────────────────
-target_link_libraries(
-    datalakeedge_native
+target_link_libraries(${CMAKE_PROJECT_NAME}
     ${android-lib}
     ${log-lib}
-    jnigraphics   # For potential bitmap pixel access via AndroidBitmap_*
+    jnigraphics
 )
-
-# ── Strip unused sections (smaller .so) ───────────────────────────────────────
-set_target_properties(datalakeedge_native PROPERTIES
-    LINK_FLAGS "-Wl,--gc-sections"
-)
-
-message(STATUS "[datalakeedge] CMake configure complete for ABI=${ANDROID_ABI}")

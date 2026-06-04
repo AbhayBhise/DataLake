@@ -57,7 +57,12 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
+
+/**
+ * Set this to true to create separate APKs per architecture.
+ */
+def enableSeparateBuildPerCPUArchitecture = true
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -84,12 +89,25 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        
+        resConfigs "en"
+
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++20", "-include", "${project.projectDir}/../../node_modules/react-native-safe-area-context/android/src/main/jni/std_format_patch.h"
             }
         }
     }
+    
+    splits {
+        abi {
+            reset()
+            enable enableSeparateBuildPerCPUArchitecture
+            universalApk false
+            include "arm64-v8a"
+        }
+    }
+
     externalNativeBuild {
         cmake {
             path "src/main/jni/CMakeLists.txt"
@@ -112,7 +130,9 @@ android {
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            shrinkResources true
+            crunchPngs true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }
     aaptOptions {

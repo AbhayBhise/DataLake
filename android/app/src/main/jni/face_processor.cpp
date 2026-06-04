@@ -48,7 +48,7 @@ static constexpr float NORM_MEAN   = 127.5f;
 static constexpr float NORM_SCALE  = 128.0f;
 
 // ── YUV → RGB (scalar fallback) ───────────────────────────────────────────────
-static inline void yuv_to_rgb_scalar(
+[[maybe_unused]] static inline void yuv_to_rgb_scalar(
     const uint8_t* __restrict__ y_plane,
     const uint8_t* __restrict__ uv_plane,
     int width, int height,
@@ -170,7 +170,7 @@ struct CLAHE {
         const int tw = (w + TILE_W - 1) / TILE_W;  // tile pixel width
         const int th = (h + TILE_H - 1) / TILE_H;  // tile pixel height
         const int tile_pixels = tw * th;
-        const int clip_count  = static_cast<int>(CLAHE_LIMIT * tile_pixels / HIST_BINS);
+        const int clip_count  = std::max(1, static_cast<int>(CLAHE_LIMIT * tile_pixels / HIST_BINS));
 
         for (int ty = 0; ty < TILE_H; ++ty) {
             for (int tx = 0; tx < TILE_W; ++tx) {
@@ -191,8 +191,30 @@ struct CLAHE {
                         hist[i] = clip_count;
                     }
                 }
-                int add_each = excess / HIST_BINS;
-                for (int i = 0; i < HIST_BINS; ++i) hist[i] += add_each;
+
+                int bin_incr = excess / HIST_BINS;
+                int upper_limit = clip_count - bin_incr;
+                for (int i = 0; i < HIST_BINS; ++i) {
+                    if (hist[i] > upper_limit) {
+                        excess -= (clip_count - hist[i]);
+                        hist[i] = clip_count;
+                    } else {
+                        excess -= bin_incr;
+                        hist[i] += bin_incr;
+                    }
+                }
+
+                // Redistribute remainder
+                while (excess > 0) {
+                    int step = (excess > 0 && HIST_BINS > excess) ? (HIST_BINS / excess) : 1;
+                    if (step < 1) step = 1;
+                    for (int i = 0; i < HIST_BINS && excess > 0; i += step) {
+                        if (hist[i] < clip_count) {
+                            hist[i]++;
+                            excess--;
+                        }
+                    }
+                }
 
                 // Build CDF → normalised LUT
                 int cdf = 0;
@@ -217,9 +239,16 @@ struct CLAHE {
         // Tile coordinates (clamped to valid range)
         float tx = (float)px / tw - 0.5f;
         float ty = (float)py / th - 0.5f;
-        int tx0 = std::max(0, (int)tx),         tx1 = std::min(TILE_W - 1, tx0 + 1);
-        int ty0 = std::max(0, (int)ty),         ty1 = std::min(TILE_H - 1, ty0 + 1);
-        float fx = tx - (int)tx,                fy = ty - (int)ty;
+        tx = std::clamp(tx, 0.f, (float)(TILE_W - 1));
+        ty = std::clamp(ty, 0.f, (float)(TILE_H - 1));
+
+        int tx0 = (int)tx;
+        int tx1 = std::min(tx0 + 1, TILE_W - 1);
+        int ty0 = (int)ty;
+        int ty1 = std::min(ty0 + 1, TILE_H - 1);
+
+        float fx = tx - tx0;
+        float fy = ty - ty0;
 
         float v00 = lut[ty0][tx0][val];
         float v01 = lut[ty0][tx1][val];
@@ -498,9 +527,20 @@ Java_com_datalakeedge_FaceAuthModule_cosineSimilarityNative(
         v_nA  = vmlaq_f32(v_nA,  va, va);
         v_nB  = vmlaq_f32(v_nB,  vb, vb);
     }
+#if defined(__aarch64__)
     dot   = vaddvq_f32(v_dot);
     normA = vaddvq_f32(v_nA);
     normB = vaddvq_f32(v_nB);
+#else
+    float32x2_t sum_dot = vadd_f32(vget_low_f32(v_dot), vget_high_f32(v_dot));
+    dot = vget_lane_f32(sum_dot, 0) + vget_lane_f32(sum_dot, 1);
+
+    float32x2_t sum_nA = vadd_f32(vget_low_f32(v_nA), vget_high_f32(v_nA));
+    normA = vget_lane_f32(sum_nA, 0) + vget_lane_f32(sum_nA, 1);
+
+    float32x2_t sum_nB = vadd_f32(vget_low_f32(v_nB), vget_high_f32(v_nB));
+    normB = vget_lane_f32(sum_nB, 0) + vget_lane_f32(sum_nB, 1);
+#endif
     for (; i < (int)lenA; ++i) {
         dot   += a[i] * b[i];
         normA += a[i] * a[i];

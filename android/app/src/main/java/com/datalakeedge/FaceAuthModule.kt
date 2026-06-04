@@ -45,23 +45,34 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
         private const val MODEL_INPUT_W  = 112
         private const val MODEL_INPUT_H  = 112
         private const val EMBED_DIM      = 192
-        private const val MATCH_THRESHOLD = 0.75f
+        private const val MATCH_THRESHOLD = 0.68f
     }
 
-    private var tflite: Interpreter? = null
+    @Volatile private var tflite: Interpreter? = null
+    @Volatile private var tfliteReady: Boolean = false
 
     private var hasNativeLib = false
 
     init {
         try {
-            System.loadLibrary("datalakeedge_native")
-            hasNativeLib = true
-            Log.i(TAG, "[Init] Native C++ library datalakeedge_native loaded successfully")
+            System.loadLibrary("appmodules")
+            hasNativeLib = false // Force stable Kotlin path for device compatibility
+            Log.i(TAG, "[Init] Native C++ library appmodules loaded successfully")
         } catch (e: Exception) {
             hasNativeLib = false
-            Log.e(TAG, "[Init] Failed to load native library datalakeedge_native: ${e.message}")
+            Log.e(TAG, "[Init] Failed to load native library appmodules: ${e.message}")
         }
-        tflite = initInterpreter()
+        // Run TFLite + NNAPI initialisation on a daemon background thread.
+        // Blocking here starves the React Native TurboModule registry, which prevents
+        // PlatformConstants from being registered, causing a crash-on-launch red screen.
+        Thread {
+            tflite = initInterpreter()
+            tfliteReady = true
+        }.apply {
+            name = "FaceAuth-TFLite-Init"
+            isDaemon = true
+            start()
+        }
     }
 
     // ─── Native JNI Methods ────────────────────────────────────────────────────
@@ -113,6 +124,19 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * Block the calling thread (max [timeoutMs] ms, default 10 s) until the TFLite interpreter
+     * background initialisation is complete, then return it — or null if it failed.
+     * Called only from @ReactMethod handlers which already run on a background worker thread.
+     */
+    private fun awaitInterpreter(timeoutMs: Long = 10_000L): Interpreter? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (!tfliteReady && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50)
+        }
+        return tflite
+    }
+
     override fun getName(): String = "FaceAuthModule"
 
     // ─── Public React Methods ──────────────────────────────────────────────────
@@ -126,8 +150,8 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
         Log.i(TAG, "[register] Starting for ID=$employeeId URI=$imageUri")
         val startMs = System.currentTimeMillis()
 
-        if (tflite == null) {
-            promise.reject("MODEL_ERROR", "AI model is not initialised. Please restart the app.")
+        if (awaitInterpreter() == null) {
+            promise.reject("MODEL_ERROR", "AI model failed to initialise. Please restart the app.")
             return
         }
 
@@ -180,9 +204,9 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
 
         val response = Arguments.createMap()
 
-        if (tflite == null) {
+        if (awaitInterpreter() == null) {
             response.putBoolean("success", false)
-            response.putString("message", "AI model not initialised. Restart the app.")
+            response.putString("message", "AI model failed to initialise. Restart the app.")
             promise.resolve(response)
             return
         }
@@ -296,6 +320,10 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
             .build()
         val detector = FaceDetection.getClient(detectorOptions)
 
+        var bestFace: Face? = null
+        var bestRotated: Bitmap? = null
+        var minRoll = 360f
+
         val rotations = floatArrayOf(0f, 90f, 270f, 180f)
         for (angle in rotations) {
             val rotated = if (angle != 0f) {
@@ -308,13 +336,38 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
             try {
                 val faces = com.google.android.gms.tasks.Tasks.await(detector.process(image))
                 if (faces.isNotEmpty()) {
-                    Log.d(TAG, "[detect] Found ${faces.size} face(s) at angle=$angle")
-                    return Pair(faces[0], rotated)
+                    val face = faces[0]
+                    val roll = Math.abs(face.headEulerAngleZ)
+                    Log.d(TAG, "[detect] Found face at angle=$angle, roll=$roll")
+                    
+                    if (roll < minRoll) {
+                        minRoll = roll
+                        // Recycle previous best if it's not the original bitmap
+                        if (bestRotated != null && bestRotated !== bitmap && bestRotated !== rotated) {
+                            bestRotated.recycle()
+                        }
+                        bestFace = face
+                        bestRotated = rotated
+                    } else {
+                        if (rotated !== bitmap) rotated.recycle()
+                    }
+                    
+                    // Stop early if almost perfectly upright
+                    if (roll < 15f) {
+                        break
+                    }
+                } else {
+                    if (rotated !== bitmap) rotated.recycle()
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "[detect] Error at angle=$angle: ${e.message}")
+                if (rotated !== bitmap) rotated.recycle()
             }
-            if (rotated !== bitmap) rotated.recycle()
+        }
+
+        if (bestFace != null && bestRotated != null) {
+            Log.i(TAG, "[detect] Best orientation selected: roll=$minRoll")
+            return Pair(bestFace, bestRotated)
         }
         return Pair(null, null)
     }
@@ -407,6 +460,36 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
      */
     private fun getEmbedding(faceBitmap: Bitmap): FloatArray? {
         val interp = tflite ?: return null
+        
+        // 1. Compute Kotlin embedding
+        var kotlinEmbedding: FloatArray? = null
+        try {
+            val normalized = normalizeBrightness(faceBitmap)
+            val resized = Bitmap.createScaledBitmap(normalized, MODEL_INPUT_W, MODEL_INPUT_H, true)
+            val imgData = ByteBuffer.allocateDirect(MODEL_INPUT_W * MODEL_INPUT_H * 3 * 4)
+                .order(ByteOrder.nativeOrder())
+
+            val intValues = IntArray(MODEL_INPUT_W * MODEL_INPUT_H)
+            resized.getPixels(intValues, 0, MODEL_INPUT_W, 0, 0, MODEL_INPUT_W, MODEL_INPUT_H)
+
+            // Normalize: (pixel - 127.5) / 128 -> range [-1, 1]
+            for (pv in intValues) {
+                imgData.putFloat(((pv shr 16 and 0xFF) - 127.5f) / 128.0f)
+                imgData.putFloat(((pv shr  8 and 0xFF) - 127.5f) / 128.0f)
+                imgData.putFloat(((pv         and 0xFF) - 127.5f) / 128.0f)
+            }
+
+            val output = Array(1) { FloatArray(EMBED_DIM) }
+            interp.run(imgData, output)
+            kotlinEmbedding = output[0]
+            val first5 = kotlinEmbedding.slice(0..4).joinToString(", ") { String.format("%.4f", it) }
+            Log.d(TAG, "[Compare] Kotlin embedding: [$first5...]")
+        } catch (e: Exception) {
+            Log.e(TAG, "[Compare] Kotlin path failed: ${e.message}")
+        }
+
+        // 2. Compute JNI embedding
+        var jniEmbedding: FloatArray? = null
         if (hasNativeLib) {
             try {
                 val rgbaBuffer = java.nio.ByteBuffer.allocateDirect(faceBitmap.width * faceBitmap.height * 4)
@@ -421,38 +504,21 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
                     imgData.asFloatBuffer().put(inputFloats)
                     val output = Array(1) { FloatArray(EMBED_DIM) }
                     interp.run(imgData, output)
-                    return output[0]
+                    jniEmbedding = output[0]
+                    val first5 = jniEmbedding.slice(0..4).joinToString(", ") { String.format("%.4f", it) }
+                    Log.d(TAG, "[Compare] JNI embedding: [$first5...]")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "[embeddingJNI] Exception, falling back to Kotlin: ${e.message}")
+                Log.e(TAG, "[Compare] JNI path failed: ${e.message}")
             }
         }
 
-        // Fallback Kotlin path
-        return try {
-            // Brightness normalize first
-            val normalized = normalizeBrightness(faceBitmap)
-            val resized = Bitmap.createScaledBitmap(normalized, MODEL_INPUT_W, MODEL_INPUT_H, true)
-            val imgData = ByteBuffer.allocateDirect(MODEL_INPUT_W * MODEL_INPUT_H * 3 * 4)
-                .order(ByteOrder.nativeOrder())
-
-            val intValues = IntArray(MODEL_INPUT_W * MODEL_INPUT_H)
-            resized.getPixels(intValues, 0, MODEL_INPUT_W, 0, 0, MODEL_INPUT_W, MODEL_INPUT_H)
-
-            // Normalize: (pixel - 127.5) / 128 → range [-1, 1] (fixed operator precedence bug)
-            for (pv in intValues) {
-                imgData.putFloat(((pv shr 16 and 0xFF) - 127.5f) / 128.0f)
-                imgData.putFloat(((pv shr  8 and 0xFF) - 127.5f) / 128.0f)
-                imgData.putFloat(((pv         and 0xFF) - 127.5f) / 128.0f)
-            }
-
-            val output = Array(1) { FloatArray(EMBED_DIM) }
-            interp.run(imgData, output)
-            output[0]
-        } catch (e: Exception) {
-            Log.e(TAG, "[embeddingKotlin] Exception: ${e.message}")
-            null
+        if (kotlinEmbedding != null && jniEmbedding != null) {
+            val sim = cosineSimilarity(kotlinEmbedding, jniEmbedding)
+            Log.i(TAG, "[Compare] Cosine similarity between Kotlin and JNI embeddings: $sim")
         }
+
+        return jniEmbedding ?: kotlinEmbedding
     }
 
     /** L2-normalised cosine similarity between two embedding vectors. */
@@ -495,10 +561,6 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    /**
-     * Load and EXIF-correct a bitmap from a file:// URI.
-     * Handles camera rotation metadata automatically.
-     */
     private fun loadBitmapFromUri(uriStr: String): Bitmap? {
         val path = if (uriStr.startsWith("file://")) uriStr.substring(7) else uriStr
         Log.d(TAG, "[load] Loading bitmap from: $path")
@@ -509,12 +571,47 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
                 return null
             }
 
-            val raw = BitmapFactory.decodeFile(path) ?: run {
+            // Step 1: Decode bounds to calculate sample size (prevents OOM & high latency)
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(path, options)
+
+            val maxDim = 640
+            var inSampleSize = 1
+            if (options.outHeight > maxDim || options.outWidth > maxDim) {
+                val halfHeight = options.outHeight / 2
+                val halfWidth = options.outWidth / 2
+                while (halfHeight / inSampleSize >= maxDim && halfWidth / inSampleSize >= maxDim) {
+                    inSampleSize *= 2
+                }
+            }
+
+            // Step 2: Decode downscaled bitmap
+            val decodedOptions = BitmapFactory.Options().apply {
+                this.inSampleSize = inSampleSize
+            }
+            val raw = BitmapFactory.decodeFile(path, decodedOptions) ?: run {
                 Log.e(TAG, "[load] BitmapFactory returned null for: $path")
                 return null
             }
 
-            // Apply EXIF rotation
+            // Step 3: Exact scaling to max 640px to ensure ultra-fast processing
+            val scaled = if (raw.width > maxDim || raw.height > maxDim) {
+                val ratio = raw.width.toFloat() / raw.height
+                val (newW, newH) = if (ratio > 1f) {
+                    Pair(maxDim, (maxDim / ratio).toInt())
+                } else {
+                    Pair((maxDim * ratio).toInt(), maxDim)
+                }
+                Bitmap.createScaledBitmap(raw, newW, newH, true).also {
+                    if (it !== raw) raw.recycle()
+                }
+            } else {
+                raw
+            }
+
+            // Step 4: Apply EXIF rotation
             val exif  = ExifInterface(path)
             val orient = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
             val rotate = when (orient) {
@@ -525,11 +622,11 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
             }
             if (rotate != 0f) {
                 val matrix = android.graphics.Matrix().apply { postRotate(rotate) }
-                val rotated = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
-                raw.recycle()
+                val rotated = Bitmap.createBitmap(scaled, 0, 0, scaled.width, scaled.height, matrix, true)
+                scaled.recycle()
                 rotated
             } else {
-                raw
+                scaled
             }
         } catch (e: Exception) {
             Log.e(TAG, "[load] Exception loading bitmap: ${e.message}")

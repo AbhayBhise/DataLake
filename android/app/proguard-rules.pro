@@ -8,3 +8,14 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# Keep TensorFlow Lite
+-keep class org.tensorflow.** { *; }
+-keep class org.tensorflow.lite.** { *; }
+
+# Keep React Native
+-keep class com.facebook.react.** { *; }
+-keep class com.facebook.hermes.** { *; }
+
+# Keep your app package
+-keep class com.datalakeedge.** { *; }
