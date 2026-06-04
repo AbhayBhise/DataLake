@@ -113,12 +113,10 @@ static void yuv_to_rgb_neon(
             }
 
             float32x4_t Y  = vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(y_u8))));
-            float32x4_t Cb = vsubq_f32(vcvtq_f32_u32(vld1q_u32((uint32_t[]){
-                cb_vals[0], cb_vals[1], cb_vals[2], cb_vals[3]
-            })), v_mean);
-            float32x4_t Cr = vsubq_f32(vcvtq_f32_u32(vld1q_u32((uint32_t[]){
-                cr_vals[0], cr_vals[1], cr_vals[2], cr_vals[3]
-            })), v_mean);
+            const uint32_t cb_arr[4] = { cb_vals[0], cb_vals[1], cb_vals[2], cb_vals[3] };
+            const uint32_t cr_arr[4] = { cr_vals[0], cr_vals[1], cr_vals[2], cr_vals[3] };
+            float32x4_t Cb = vsubq_f32(vcvtq_f32_u32(vld1q_u32(cb_arr)), v_mean);
+            float32x4_t Cr = vsubq_f32(vcvtq_f32_u32(vld1q_u32(cr_arr)), v_mean);
 
             float32x4_t R = vaddq_f32(Y, vmulq_f32(v_cr_r, Cr));
             float32x4_t G = vsubq_f32(vsubq_f32(Y, vmulq_f32(v_cb_g, Cb)), vmulq_f32(v_cr_g, Cr));
