@@ -300,9 +300,28 @@ const AuthScreen: React.FC<Props> = ({ navigation }) => {
     setProcessing(true);
 
     try {
+      // Small stabilization delay to ensure UI updates and camera hardware settles
+      await new Promise<void>((resolve) => setTimeout(() => resolve(), 300));
       const startTime = Date.now();
-      const photo = await cameraRef.current.takePhoto({ flash: 'off' });
-      const fileUri = `file://${photo.path}`;
+
+      // Retry mechanism to make photo capture resilient to transient hardware states
+      let photo;
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          photo = await cameraRef.current.takePhoto({ flash: 'off' });
+          break;
+        } catch (takePhotoError) {
+          console.warn(`[Auth] takePhoto failed, retries left: ${retries - 1}. Error:`, takePhotoError);
+          retries--;
+          if (retries === 0) {
+            throw takePhotoError;
+          }
+          await new Promise<void>((resolve) => setTimeout(() => resolve(), 250));
+        }
+      }
+
+      const fileUri = `file://${photo!.path}`;
       const id = employeeId.trim().toUpperCase();
 
       const result = await FaceAuthService.authenticateFace(fileUri, id);
@@ -473,7 +492,7 @@ const AuthScreen: React.FC<Props> = ({ navigation }) => {
             device={device}
             isActive
             photo
-            frameProcessor={scanStep === 'challenge' ? frameProcessor : undefined}
+            frameProcessor={frameProcessor}
             onError={err => {
               console.error('[Camera] Runtime error:', err);
               if (err.code === 'system/camera-is-restricted') {
