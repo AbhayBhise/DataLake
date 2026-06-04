@@ -73,3 +73,12 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Added to protect build and environment files
+node_modules/
+android/build/
+android/app/build/
+android/.gradle/
+*.keystore
+.env
+
