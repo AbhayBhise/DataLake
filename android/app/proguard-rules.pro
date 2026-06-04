@@ -19,3 +19,7 @@
 
 # Keep your app package
 -keep class com.datalakeedge.** { *; }
+
+# Ignore missing class warnings for TensorFlow Lite GPU delegates
+-dontwarn org.tensorflow.lite.gpu.**
+

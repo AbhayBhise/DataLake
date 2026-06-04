@@ -81,4 +81,6 @@ android/app/build/
 android/.gradle/
 *.keystore
 .env
+android/ninja.exe
+
 

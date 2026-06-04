@@ -95,6 +95,7 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++20", "-include", "${project.projectDir}/../../node_modules/react-native-safe-area-context/android/src/main/jni/std_format_patch.h"
+                arguments "-DCMAKE_OBJECT_PATH_MAX=140"
             }
         }
     }

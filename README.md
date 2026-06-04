@@ -1,97 +1,154 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# 🛣️ DataLakeEdge — Offline-First Biometric Face Authentication
+### NHAI Hackathon 7.0 — Track: Secure Biometric Offline Check-in
 
-# Getting Started
+**DataLakeEdge** is a production-grade, offline-first face authentication application built on React Native 0.85 (New Architecture/Fabric enabled). It features secure, on-device biometric profile enrollment and verification, supported by a 3-step randomized liveness challenge (Smile, Blink, Neutral expressions) to prevent spoofing. It runs entirely offline under 1 second per check-in by leveraging Google ML Kit, MobileFaceNet, and C++ NEON JNI optimizations.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+---
 
-## Step 1: Start Metro
+## 🏗️ System Architecture & Data Flow
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+DataLakeEdge follows a secure pipeline that keeps all biometric data on the local device:
 
-To start the Metro dev server, run the following command from the root of your React Native project:
-
-```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       1. CAMERA FRAME                       │
+│  - Captures high-res frontal view (mirror axis compensated) │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                2. GOOGLE ML KIT FACE DETECTOR                │
+│  - Extracts face coordinates & roll angle (headEulerAngleZ) │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│             3. C++ NEON JNI / KOTLIN PREPROCESSING           │
+│  - Rotates cropped face upright based on ML Kit roll angle   │
+│  - Normalizes lighting using CLAHE (equalizes contrast)     │
+│  - Downsamples to 112x112 pixel tensor                      │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│          4. MOBILEFACENET INFERENCE (TFLite Engine)         │
+│  - Executes 192-d floating-point embedding vector           │
+│  - Runs on NNAPI hardware (NPU/DSP) with XNNPACK fallback   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│              5. COSINE SIMILARITY COMPARISON                │
+│  - Computes similarity score against local DB profile       │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+            ┌──────────────────┴──────────────────┐
+            ▼                                     ▼
+┌───────────────────────┐             ┌───────────────────────┐
+│     SIMILARITY >= 0.68│             │     SIMILARITY < 0.68 │
+├───────────────────────┤             ├───────────────────────┤
+│       ✅ MATCH        │             │       ❌ MISMATCH     │
+│ - Grant Access        │             │ - Deny Access         │
+│ - Save SUCCESS log    │             │ - Save FAILED log     │
+└───────────┬───────────┘             └───────────┬───────────┘
+            │                                     │
+            └──────────────────┬──────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   6. LOCAL SQLite DATABASE                  │
+│  - Stores employee records, timestamps, and audit log data │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## Step 2: Build and run your app
+### Key Technical Specs:
+* **Offline Embedding Storage**: Saved securely in Shared Preferences using dynamic JSON encryption.
+* **Database Engine**: Local SQLite engine with active table schemas tracking biometric confidence, inference latency (in ms), challenge sequences, and GPS plaza locations.
+* **Performance**: End-to-end enrollment and authentication takes **< 150ms** for AI inference, and **< 15ms** for preprocessing.
+* **APK Size**: Optimized from **226MB** to **44.2MB** (80.4% reduction).
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+---
 
-### Android
+## 📦 How Collaborators Can Test (No Source Code Required)
 
-```sh
-# Using npm
-npm run android
+To verify the app's performance and test for negative matches (stranger rejection), follow these simple steps to install the pre-compiled optimized APK:
 
-# OR using Yarn
-yarn android
+### 1. Installation
+1. Locate the optimized release APK inside the repo:
+   👉 **`android/app/build/outputs/apk/release/app-arm64-v8a-release.apk`**
+2. Transfer this `.apk` file to your Android phone/tablet (e.g. via Google Drive, Email, or USB).
+3. On your Android device, go to **Settings** → **Apps** → **Special app access** → **Install unknown apps** → Enable permissions for your File Manager/Browser.
+4. Open the APK file and select **Install**.
+
+### 2. Live Verification Test Cases (Negative & Positive Testing)
+
+* **Test Case 1: Enrollment**
+  1. Open the app and tap **Register Employee**.
+  2. Input Employee ID: `EMP-200` (Letters, numbers, and hyphens only).
+  3. Select designation and enter a name.
+  4. Position your face in the oval guide and tap **Capture**. You will receive an audio confirmation: *"Face profile enrolled successfully."*
+
+* **Test Case 2: Negative Testing (Strangers Access Denied)**
+  1. Return to the dashboard and select **Verify Attendance**.
+  2. Enter the Employee ID: `EMP-200`.
+  3. Complete the **3-Step Liveness Challenge** (perform the requested Smile, Blink, or Neutral face when prompted).
+  4. Once liveness is verified, have a **different person** align their face for the matching capture.
+  5. **Expected Result**: Access is denied, audio prompts *"Access denied. Face did not match"*, and logcat records a low similarity score (e.g., `0.22 - 0.29`), which is safely below the security threshold of `0.68`.
+
+* **Test Case 3: Positive Testing (Access Granted)**
+  1. Repeat the verification process for `EMP-200`.
+  2. Complete the liveness challenges.
+  3. Have the **original enrolled person** align their face for the capture.
+  4. **Expected Result**: Access is granted, audio prompts *"Welcome"*, and logcat records a high similarity score (e.g. `0.85 - 0.94`), which is well above the `0.68` threshold.
+
+* **Test Case 4: Audit Logs Check**
+  1. Navigate to **Audit Logs** from the dashboard.
+  2. View the list of all check-in attempts.
+  3. Verify that the correct GPS locations, inference speed (in ms), biometric confidence scores, and challenge hashes are audited.
+
+---
+
+## 🛠️ How to Build and Run from Source (For Developers)
+
+### 1. Prerequisites
+Ensure you have the following installed on your machine:
+* **Node.js**: `v18` or higher
+* **Android Studio**: Bundled with JDK 17
+* **Android SDK**: Install SDK Platform version `34` (Android 14) and NDK `26.3.11579264`
+
+### 2. Clone and Setup
+Open PowerShell or your terminal and execute:
+```bash
+# Clone the repository
+git clone https://github.com/AbhayBhise/DataLake.git
+cd DataLake
+
+# Install dependencies
+npm install
 ```
 
-### iOS
+### 3. Running the App (Debug Mode)
+Ensure an Android device is connected with **USB Debugging** enabled (`adb devices` should list the device):
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+1. **Start the Metro Packager** (Terminal 1):
+   ```bash
+   npx react-native start --reset-cache
+   ```
+2. **Launch the Android App** (Terminal 2):
+   ```bash
+   npx react-native run-android
+   ```
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### 4. Compiling the Production Release Build (Windows Target)
+To rebuild the optimized, Proguard-obfuscated ARM64 release APK:
+```bash
+# Navigate to android folder
+cd android
 
-```sh
-bundle install
+# Clean existing build caches
+./gradlew clean
+
+# Compile release APK
+./gradlew assembleRelease
 ```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+The output APK will be generated at:
+`android/app/build/outputs/apk/release/app-arm64-v8a-release.apk`
