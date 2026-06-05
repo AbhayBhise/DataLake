@@ -109,11 +109,11 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path "src/main/jni/CMakeLists.txt"
-        }
-    }
+//    externalNativeBuild {
+//        cmake {
+//            path "src/main/jni/CMakeLists.txt"
+//        }
+//    }
     signingConfigs {
         debug {
             storeFile file('debug.keystore')

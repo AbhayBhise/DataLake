@@ -54,14 +54,9 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
     private var hasNativeLib = false
 
     init {
-        try {
-            System.loadLibrary("datalakeedge_native")
-            hasNativeLib = true // Enable high-performance C++ path
-            Log.i(TAG, "[Init] Native C++ library datalakeedge_native loaded successfully")
-        } catch (t: Throwable) {
-            hasNativeLib = false
-            Log.e(TAG, "[Init] Failed to load native library datalakeedge_native: ${t.message}")
-        }
+        hasNativeLib = false
+        Log.i(TAG, "[Init] Native C++ library removed, using Kotlin fallback")
+        
         // Run TFLite + NNAPI initialisation on a daemon background thread.
         // Blocking here starves the React Native TurboModule registry, which prevents
         // PlatformConstants from being registered, causing a crash-on-launch red screen.
