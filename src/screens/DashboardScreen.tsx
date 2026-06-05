@@ -1,8 +1,8 @@
 // ─── Dashboard Screen ─────────────────────────────────────────────────────────
 // Main hub: metrics, recent logs, quick actions, network toggle, sync
 
-// ── Sync endpoint — swap this one line when AWS Lambda URL is ready ────────────
-const SYNC_ENDPOINT = 'https://httpbin.org/post'; // TODO: replace with real AWS API Gateway URL
+// ── Sync endpoint — real AWS API Gateway (ap-south-1) ─────────────────────────
+const SYNC_ENDPOINT = 'https://9e5wawwyq6.execute-api.ap-south-1.amazonaws.com/prod/sync';
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
@@ -154,8 +154,20 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
 
               console.log(`[Sync] HTTP response status: ${response.status}`);
 
-              if (response.ok) {
-                // ✅ Upload confirmed — now safe to purge local records
+              // Parse body regardless — needed to check responseJson.success
+              let responseJson: any = {};
+              try {
+                responseJson = await response.json();
+                console.log('[Sync] Response body:', JSON.stringify(responseJson));
+              } catch (_) {
+                console.warn('[Sync] Could not parse response JSON');
+              }
+
+              const httpOk      = response.status === 200;
+              const serverAck   = responseJson.success === true;
+
+              if (httpOk && serverAck) {
+                // ✅ Both HTTP 200 AND server-level success confirmed — safe to purge
                 Animated.timing(syncProgress, {
                   toValue: 1,
                   duration: 400,
@@ -169,11 +181,14 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                   `${records.length} record(s) uploaded to AWS and purged from local storage.`,
                 );
               } else {
-                // ❌ Server error — do NOT purge; data stays safe locally
-                console.warn(`[Sync] FAILED — server returned ${response.status}`);
+                // ❌ Either HTTP error or server returned success:false — do NOT purge
+                const reason = !httpOk
+                  ? `HTTP ${response.status}`
+                  : `server.success=${responseJson.success}`;
+                console.warn(`[Sync] FAILED — ${reason}. Records kept locally.`);
                 Alert.alert(
                   'Sync Failed',
-                  `Server returned ${response.status}. Records kept locally — will retry when connected.`,
+                  `Upload rejected (${reason}). Records kept locally — will retry when connected.`,
                 );
               }
             } catch (err) {
