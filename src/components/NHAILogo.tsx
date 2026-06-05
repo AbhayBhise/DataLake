@@ -30,11 +30,27 @@ export const NHAILogo: React.FC<NHAILogoProps> = ({ size = 80, compact = false }
         {/* Saffron accent bar at the top representing India's national colors */}
         <View style={[styles.saffronBar, { height: 6 * scale }]} />
 
-        {/* Concentric fingerprint biometric arcs */}
-        <View style={[styles.arcsContainer, { height: size * 0.65, marginTop: 4 * scale }]}>
-          <View style={[styles.arc, { width: 50 * scale, height: 50 * scale, borderRadius: 25 * scale, borderBottomColor: 'transparent', borderWidth: 2.5 * scale, top: 4 * scale }]} />
-          <View style={[styles.arc, { width: 34 * scale, height: 34 * scale, borderRadius: 17 * scale, borderBottomColor: 'transparent', borderWidth: 2.5 * scale, top: 12 * scale }]} />
-          <View style={[styles.arc, { width: 18 * scale, height: 18 * scale, borderRadius: 9 * scale, borderBottomColor: 'transparent', borderWidth: 2.5 * scale, top: 20 * scale }]} />
+        {/* Bounding Box / Viewfinder Brackets around Face Scan */}
+        <View style={[styles.scannerContainer, { width: size * 0.7, height: size * 0.7, marginTop: 8 * scale }]}>
+          {/* Top-Left Bracket */}
+          <View style={[styles.bracket, styles.topLeft, { width: 10 * scale, height: 10 * scale, borderWidth: 2 * scale }]} />
+          {/* Top-Right Bracket */}
+          <View style={[styles.bracket, styles.topRight, { width: 10 * scale, height: 10 * scale, borderWidth: 2 * scale }]} />
+          {/* Bottom-Left Bracket */}
+          <View style={[styles.bracket, styles.bottomLeft, { width: 10 * scale, height: 10 * scale, borderWidth: 2 * scale }]} />
+          {/* Bottom-Right Bracket */}
+          <View style={[styles.bracket, styles.bottomRight, { width: 10 * scale, height: 10 * scale, borderWidth: 2 * scale }]} />
+
+          {/* Stylized Facial Profile Outline */}
+          <View style={styles.faceIconContainer}>
+            {/* Head */}
+            <View style={[styles.faceHead, { width: 20 * scale, height: 24 * scale, borderRadius: 10 * scale, borderWidth: 2 * scale }]} />
+            {/* Shoulders */}
+            <View style={[styles.faceShoulders, { width: 32 * scale, height: 12 * scale, borderTopLeftRadius: 16 * scale, borderTopRightRadius: 16 * scale, borderWidth: 2 * scale }]} />
+          </View>
+
+          {/* Scanning Laser Line */}
+          <View style={[styles.scanLine, { height: 2 * scale, top: size * 0.32 }]} />
         </View>
 
         {/* Small verified green checkmark badge at the bottom of the shield */}
@@ -42,15 +58,15 @@ export const NHAILogo: React.FC<NHAILogoProps> = ({ size = 80, compact = false }
           style={[
             styles.checkBadge,
             {
-              width: 20 * scale,
-              height: 20 * scale,
-              borderRadius: 10 * scale,
+              width: 18 * scale,
+              height: 18 * scale,
+              borderRadius: 9 * scale,
               borderWidth: 1.5 * scale,
               bottom: 8 * scale,
             },
           ]}
         >
-          <Text style={[styles.checkText, { fontSize: 10 * scale, lineHeight: 11 * scale }]}>✓</Text>
+          <Text style={[styles.checkText, { fontSize: 9 * scale, lineHeight: 10 * scale }]}>✓</Text>
         </View>
       </View>
 
@@ -90,14 +106,62 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#FF9933', // Saffron orange
   },
-  arcsContainer: {
-    width: '100%',
-    alignItems: 'center',
+  scannerContainer: {
     position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  arc: {
+  bracket: {
     position: 'absolute',
-    borderColor: '#7AADFF', // Light blue fingerprint color
+    borderColor: '#7AADFF', // Light blue scanning bracket
+  },
+  topLeft: {
+    top: 0,
+    left: 0,
+    borderBottomWidth: 0,
+    borderRightWidth: 0,
+  },
+  topRight: {
+    top: 0,
+    right: 0,
+    borderBottomWidth: 0,
+    borderLeftWidth: 0,
+  },
+  bottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderTopWidth: 0,
+    borderRightWidth: 0,
+  },
+  bottomRight: {
+    bottom: 0,
+    right: 0,
+    borderTopWidth: 0,
+    borderLeftWidth: 0,
+  },
+  faceIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  faceHead: {
+    borderColor: '#7AADFF',
+    backgroundColor: 'transparent',
+  },
+  faceShoulders: {
+    borderColor: '#7AADFF',
+    backgroundColor: 'transparent',
+    borderBottomWidth: 0,
+    marginTop: 2,
+  },
+  scanLine: {
+    position: 'absolute',
+    width: '80%',
+    backgroundColor: '#FF9933', // Saffron scanning laser line
+    shadowColor: '#FF9933',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 3,
   },
   checkBadge: {
     position: 'absolute',
