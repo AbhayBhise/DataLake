@@ -55,12 +55,12 @@ class FaceAuthModule(reactContext: ReactApplicationContext) :
 
     init {
         try {
-            System.loadLibrary("appmodules")
-            hasNativeLib = false // Force stable Kotlin path for device compatibility
-            Log.i(TAG, "[Init] Native C++ library appmodules loaded successfully")
-        } catch (e: Exception) {
+            System.loadLibrary("datalakeedge_native")
+            hasNativeLib = true // Enable high-performance C++ path
+            Log.i(TAG, "[Init] Native C++ library datalakeedge_native loaded successfully")
+        } catch (t: Throwable) {
             hasNativeLib = false
-            Log.e(TAG, "[Init] Failed to load native library appmodules: ${e.message}")
+            Log.e(TAG, "[Init] Failed to load native library datalakeedge_native: ${t.message}")
         }
         // Run TFLite + NNAPI initialisation on a daemon background thread.
         // Blocking here starves the React Native TurboModule registry, which prevents

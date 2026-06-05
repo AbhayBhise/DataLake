@@ -133,11 +133,12 @@ android {
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources true
             crunchPngs true
-            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
     aaptOptions {
         noCompress "tflite"
+        noCompress "lite"
     }
 }
 

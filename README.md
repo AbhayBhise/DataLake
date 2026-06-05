@@ -126,6 +126,21 @@ cd DataLake
 npm install
 ```
 
+#### ⚙️ First Time Setup (local.properties)
+After cloning, create the file `android/local.properties` with:
+```properties
+sdk.dir=YOUR_ANDROID_SDK_PATH
+```
+* **On Windows**, the path is usually:
+  `C\:\\Users\\YOUR_USERNAME\\AppData\\Local\\Android\\Sdk`
+* **On macOS**:
+  `/Users/YOUR_USERNAME/Library/Android/sdk`
+* **On Linux**:
+  `/home/YOUR_USERNAME/Android/Sdk`
+
+*Note: To find your exact SDK path in Android Studio, go to **Settings/Preferences** → **Appearance & Behavior** → **System Settings** → **Android SDK**, and copy the Android SDK Location path.*
+
+
 ### 3. Running the App (Debug Mode)
 Ensure an Android device is connected with **USB Debugging** enabled (`adb devices` should list the device):
 
