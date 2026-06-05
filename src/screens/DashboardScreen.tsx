@@ -95,8 +95,8 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   // ── Sync & Purge ──────────────────────────────────────────────────────────
-  const handleSync = () => {
-    if (isOffline) {
+  const handleSync = (isManual = true) => {
+    if (isOffline && isManual) {
       Alert.alert(
         'Offline Mode Active',
         'Switch to Online mode using the toggle above, then sync your logs.',
@@ -104,20 +104,38 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
       );
       return;
     }
-    if (stats.total === 0) {
-      Alert.alert('Nothing to Sync', 'There are no local logs to synchronise.');
-      return;
-    }
-    Alert.alert(
-      'Sync & Purge Logs',
-      `This will upload ${stats.total} log(s) to AWS and permanently delete them locally. Proceed?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sync Now',
-          style: 'destructive',
-          onPress: async () => {
-            setSyncing(true);
+    
+    // For auto-sync, we need to fetch the freshest stats directly
+    DatabaseService.getLogStats().then(currentStats => {
+      if (currentStats.total === 0) {
+        if (isManual) {
+          Alert.alert('Nothing to Sync', 'There are no local logs to synchronise.');
+        }
+        return;
+      }
+
+      if (!isManual) {
+        // Auto-sync silently triggers without the prompt
+        performSync();
+      } else {
+        Alert.alert(
+          'Sync & Purge Logs',
+          `This will upload ${currentStats.total} log(s) to AWS and permanently delete them locally. Proceed?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Sync Now',
+              style: 'destructive',
+              onPress: () => performSync(),
+            },
+          ],
+        );
+      }
+    });
+  };
+
+  const performSync = async () => {
+    setSyncing(true);
             syncProgress.setValue(0);
 
             // Animate progress bar while upload is in-flight
@@ -213,10 +231,6 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
               setSyncing(false);
               syncProgress.setValue(0);
             }
-          },
-        },
-      ],
-    );
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -256,7 +270,18 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
           <Switch
             trackColor={{ false: Colors.bg.elevated, true: Colors.brand.emerald + '88' }}
             thumbColor={isOffline ? Colors.brand.emerald : Colors.text.muted}
-            onValueChange={v => setIsOffline(v)}
+            onValueChange={v => {
+              setIsOffline(v);
+              // Auto-sync when network is restored
+              if (!v) {
+                // We use a small timeout so the state updates and the UI responds first
+                setTimeout(() => {
+                  // We can't easily check stats.total here since state might be stale, 
+                  // but handleSync already safely checks if there are logs to sync!
+                  handleSync(false); // pass a flag to handleSync so it knows it's auto-triggered
+                }, 500);
+              }
+            }}
             value={isOffline}
           />
         </View>
@@ -324,7 +349,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
             syncing ? styles.actionBtnDisabled : styles.actionBtnSync,
             Shadow.sm,
           ]}
-          onPress={handleSync}
+          onPress={() => handleSync(true)}
           disabled={syncing}
           accessibilityRole="button"
           accessibilityLabel="Sync logs to AWS">
