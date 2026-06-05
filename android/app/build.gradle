@@ -154,11 +154,8 @@ dependencies {
     // Google ML Kit Face Detection
     implementation 'com.google.mlkit:face-detection:16.1.6'
 
-    // TensorFlow Lite core + delegates
+    // TensorFlow Lite core + support (CPU/XNNPACK inference only — no GPU delegate)
     implementation 'org.tensorflow:tensorflow-lite:2.14.0'
     implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
-    // NNAPI delegate — enables hardware neural accelerators (DSP/NPU)
-    // Falls back to XNNPACK CPU SIMD automatically on unsupported devices
-    implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
     implementation 'org.tensorflow:tensorflow-lite-api:2.14.0'
 }

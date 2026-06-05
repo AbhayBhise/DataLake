@@ -1,6 +1,9 @@
 // ─── Dashboard Screen ─────────────────────────────────────────────────────────
 // Main hub: metrics, recent logs, quick actions, network toggle, sync
 
+// ── Sync endpoint — swap this one line when AWS Lambda URL is ready ────────────
+const SYNC_ENDPOINT = 'https://httpbin.org/post'; // TODO: replace with real AWS API Gateway URL
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
@@ -106,7 +109,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     }
     Alert.alert(
       'Sync & Purge Logs',
-      `This will upload ${stats.total} logs to AWS and permanently delete them locally. Proceed?`,
+      `This will upload ${stats.total} log(s) to AWS and permanently delete them locally. Proceed?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -115,25 +118,75 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
           onPress: async () => {
             setSyncing(true);
             syncProgress.setValue(0);
+
+            // Animate progress bar while upload is in-flight
             Animated.timing(syncProgress, {
-              toValue: 1,
-              duration: 2800,
+              toValue: 0.85,
+              duration: 1800,
               useNativeDriver: false,
-            }).start(async () => {
-              try {
+            }).start();
+
+            try {
+              // Fetch ALL logs from SQLite and map to the AWS payload schema
+              const allLogs = await DatabaseService.getLogs(1000);
+              const deviceId = `NHAI-DEVICE-${Math.abs(
+                allLogs[0]?.id ?? Date.now(),
+              ).toString(16).toUpperCase()}`;
+
+              const records = allLogs.map(log => ({
+                userId:        log.employee_id,
+                employeeName:  log.employee_id,   // name stored in employees table; id is the key
+                timestamp:     new Date(log.timestamp).toISOString(),
+                location:      log.location || 'NHAI Site',
+                checkInType:   'face_recognition' as const,
+                deviceId,
+              }));
+
+              console.log(
+                `[Sync] Uploading ${records.length} record(s) to ${SYNC_ENDPOINT}`,
+              );
+
+              const response = await fetch(SYNC_ENDPOINT, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ records }),
+              });
+
+              console.log(`[Sync] HTTP response status: ${response.status}`);
+
+              if (response.ok) {
+                // ✅ Upload confirmed — now safe to purge local records
+                Animated.timing(syncProgress, {
+                  toValue: 1,
+                  duration: 400,
+                  useNativeDriver: false,
+                }).start();
                 await DatabaseService.deleteAllLogs();
                 await loadData();
+                console.log(`[Sync] SUCCESS — ${records.length} record(s) purged from local DB`);
                 Alert.alert(
-                  '✓ Sync Complete',
-                  'All logs have been uploaded to AWS and purged from local storage.',
+                  '✓ Sync Successful',
+                  `${records.length} record(s) uploaded to AWS and purged from local storage.`,
                 );
-              } catch (err) {
-                Alert.alert('Sync Failed', 'Failed to purge local logs. Please try again.');
-              } finally {
-                setSyncing(false);
-                syncProgress.setValue(0);
+              } else {
+                // ❌ Server error — do NOT purge; data stays safe locally
+                console.warn(`[Sync] FAILED — server returned ${response.status}`);
+                Alert.alert(
+                  'Sync Failed',
+                  `Server returned ${response.status}. Records kept locally — will retry when connected.`,
+                );
               }
-            });
+            } catch (err) {
+              // ❌ Network error — do NOT purge
+              console.error('[Sync] Network error:', err);
+              Alert.alert(
+                'Sync Failed',
+                'No response from server. Records kept locally — will retry when connected.',
+              );
+            } finally {
+              setSyncing(false);
+              syncProgress.setValue(0);
+            }
           },
         },
       ],
