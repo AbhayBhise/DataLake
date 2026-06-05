@@ -134,14 +134,24 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                 allLogs[0]?.id ?? Date.now(),
               ).toString(16).toUpperCase()}`;
 
-              const records = allLogs.map(log => ({
+              const records = allLogs.map(log => {
+                let validTimestamp = new Date().toISOString();
+                try {
+                  const d = new Date(log.timestamp);
+                  if (!isNaN(d.getTime())) {
+                    validTimestamp = d.toISOString();
+                  }
+                } catch (e) {}
+
+                return {
                 userId:        log.employee_id,
                 employeeName:  log.employee_id,   // name stored in employees table; id is the key
-                timestamp:     new Date(log.timestamp).toISOString(),
+                timestamp:     validTimestamp,
                 location:      log.location || 'NHAI Site',
                 checkInType:   'face_recognition' as const,
                 deviceId,
-              }));
+                };
+              });
 
               console.log(
                 `[Sync] Uploading ${records.length} record(s) to ${SYNC_ENDPOINT}`,
