@@ -23,10 +23,13 @@ type Props = StackScreenProps<RootStackParamList, 'Register'>;
 const DESIGNATIONS = ['Engineer', 'Supervisor', 'Inspector', 'Technician', 'Security', 'Manager', 'Driver'];
 
 const RegisterScreen: React.FC<Props> = ({ navigation }) => {
-  const frontDevice = useCameraDevice('front');
-  const backDevice  = useCameraDevice('back');
-  const device      = frontDevice ?? backDevice;
-  const cameraRef   = useRef<Camera>(null);
+  const [cameraPosition, setCameraPosition] = useState<'front' | 'back'>('front');
+  const device    = useCameraDevice(cameraPosition);
+  const cameraRef = useRef<Camera>(null);
+
+  const toggleCamera = useCallback(() => {
+    setCameraPosition(prev => (prev === 'front' ? 'back' : 'front'));
+  }, []);
 
   const [hasCamPerm, setHasCamPerm] = useState(false);
   const [phase, setPhase]           = useState<'form' | 'camera'>('form');
@@ -336,6 +339,15 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
             }}
           />
 
+          {/* Camera flip button — always visible during enrollment */}
+          <TouchableOpacity
+            style={styles.camFlipBtn}
+            onPress={toggleCamera}
+            accessibilityRole="button"
+            accessibilityLabel="Switch camera">
+            <Text style={styles.camFlipIcon}>⇄</Text>
+          </TouchableOpacity>
+
           {/* Overlay */}
           <FaceGuideOverlay
             scanStep={processing ? 'matching' : captureReady ? 'align' : 'align'}
@@ -435,6 +447,11 @@ const styles = StyleSheet.create({
   proceedBtnText:   { color: Colors.text.primary, fontSize: Typography.base, fontWeight: Typography.extrabold },
   // Camera
   cameraContainer:  { flex: 1, backgroundColor: Colors.bg.primary },
+  camFlipBtn:       { position: 'absolute', top: 16, right: 16, width: 50, height: 50,
+                      borderRadius: 25, backgroundColor: 'rgba(8,14,26,0.65)',
+                      borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
+                      alignItems: 'center', justifyContent: 'center', zIndex: 20 },
+  camFlipIcon:      { color: '#ffffff', fontSize: 24, fontWeight: '700' },
   camError:         { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing['3xl'] },
   camErrorText:     { color: Colors.text.secondary, textAlign: 'center', fontSize: Typography.base, marginBottom: Spacing.xl },
   cancelBtn:        { paddingVertical: Spacing.md },
