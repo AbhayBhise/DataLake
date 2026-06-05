@@ -152,3 +152,29 @@ cd android
 ```
 The output APK will be generated at:
 `android/app/build/outputs/apk/release/app-arm64-v8a-release.apk`
+
+---
+
+## ⚠️ Remaining Tasks for Teammates to Complete
+
+Due to a power and battery outage, the latest project progress has been committed and pushed. Teammates must complete the following remaining items:
+
+1. **Run and Complete the Final Release APK Build:**
+   * Compile the optimized, obfuscated production APK:
+     ```powershell
+     cd android
+     .\gradlew assembleRelease
+     ```
+   * Verify the build finishes without errors. (Note: The C++ JNI header compile warning and comment issue in `CMakeLists.txt` is already resolved and verified).
+
+2. **Verify the New Adaptive App Icons:**
+   * Install the generated build on a physical Android device.
+   * Confirm the new **Face-Scan Viewfinder** launcher icon renders cleanly without any white/black background corners on different screen launchers (supports Android adaptive icon layers: `#0D2E6E` background + transparent vector foreground).
+
+3. **Live AWS Sync Endpoint Testing:**
+   * Ensure attendance logs sync successfully with the production API Gateway (`https://9e5wawwyq6.execute-api.ap-south-1.amazonaws.com/prod/sync`).
+   * Verify local SQLite logs are purged *only* when the server responds with HTTP `200` and the response body is explicitly `{"success": true}`.
+
+4. **Perform Ambient Light Liveness Testing:**
+   * Test the randomized 3-step liveness challenge (Smile, Blink, Neutral) in real-world highway lighting conditions (direct sunlight and night lighting at plaza booths) to ensure high verification reliability.
+
