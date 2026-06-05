@@ -26,6 +26,7 @@ import LogItem from '../components/LogItem';
 import DatabaseService, { AttendanceLog } from '../services/database';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import NHAILogo from '../components/NHAILogo';
 
 type Props = StackScreenProps<RootStackParamList, 'Dashboard'>;
 
@@ -217,9 +218,12 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
           styles.header,
           { transform: [{ translateY: headerAnim }], opacity: headerOpacity },
         ]}>
-        <View>
-          <Text style={styles.headerTitle}>DATALAKE EDGE</Text>
-          <Text style={styles.headerSub}>Hackathon 7.0 • NHAI</Text>
+        <View style={styles.headerLeft}>
+          <NHAILogo size={36} compact={true} />
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerTitle}>DATALAKE EDGE</Text>
+            <Text style={styles.headerSub}>Hackathon 7.0 • NHAI</Text>
+          </View>
         </View>
         <View style={styles.networkBadge}>
           <View
@@ -375,6 +379,8 @@ const styles = StyleSheet.create({
   header:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
                   paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg,
                   borderBottomWidth: 1, borderBottomColor: Colors.border.subtle },
+  headerLeft:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerTextContainer: { justifyContent: 'center' },
   headerTitle:  { color: Colors.text.primary, fontSize: Typography.lg, fontWeight: Typography.extrabold,
                   letterSpacing: Typography.wider },
   headerSub:    { color: Colors.text.muted, fontSize: Typography.xs, marginTop: 2 },

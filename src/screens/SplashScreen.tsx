@@ -9,11 +9,13 @@ import {
   Animated,
   StatusBar,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { Colors, Typography, Spacing } from '../theme';
 import DatabaseService from '../services/database';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import NHAILogo from '../components/NHAILogo';
 
 const { width: W } = Dimensions.get('window');
 
@@ -121,7 +123,7 @@ const SplashScreen: React.FC<Props> = ({ navigation }) => {
           styles.logoBadge,
           { transform: [{ scale: logoScale }], opacity: logoOpacity },
         ]}>
-        <Text style={styles.logoEmoji}>🛡</Text>
+        <NHAILogo size={80} compact={true} />
       </Animated.View>
 
       {/* App title */}
@@ -134,7 +136,7 @@ const SplashScreen: React.FC<Props> = ({ navigation }) => {
           },
         ]}>
         DATALAKE
-        <Text style={styles.titleAccent}>  EDGE</Text>
+        <Text style={styles.titleAccent}> EDGE</Text>
       </Animated.Text>
 
       {/* Divider */}
@@ -142,7 +144,7 @@ const SplashScreen: React.FC<Props> = ({ navigation }) => {
 
       {/* Subtitle */}
       <Animated.Text style={[styles.subtitle, { opacity: subtitleOpacity }]}>
-        Secure Offline Biometric Authentication
+        SECURE • OFFLINE • VERIFIED
       </Animated.Text>
 
       {/* NHAI Tagline */}
@@ -186,53 +188,40 @@ const styles = StyleSheet.create({
     top: '20%',
   },
   logoBadge: {
-    width: 100,
-    height: 100,
-    borderRadius: 28,
-    backgroundColor: Colors.bg.tertiary,
-    borderWidth: 2,
-    borderColor: Colors.brand.indigo + '66',
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: Spacing['2xl'],
-    shadowColor: Colors.brand.indigo,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 16,
-  },
-  logoEmoji: {
-    fontSize: 48,
   },
   title: {
+    fontFamily: Platform.OS === 'android' ? 'serif' : 'Georgia',
     fontSize: Typography['3xl'],
-    fontWeight: Typography.extrabold,
+    fontWeight: Typography.bold,
     color: Colors.text.primary,
-    letterSpacing: Typography.widest,
+    letterSpacing: Typography.wider,
     textAlign: 'center',
   },
   titleAccent: {
-    color: Colors.brand.indigo,
+    color: '#C9921A', // Gold/amber accent
   },
   divider: {
     height: 2,
-    backgroundColor: Colors.brand.indigo,
+    backgroundColor: '#C9921A', // Gold/amber divider
     borderRadius: 1,
     marginVertical: Spacing.lg,
     opacity: 0.7,
   },
   subtitle: {
+    fontSize: Typography.xs,
+    fontWeight: Typography.bold,
+    color: '#C9921A', // Gold/amber
+    letterSpacing: Typography.wider,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
+    textTransform: 'uppercase',
+  },
+  tagline: {
     fontSize: Typography.sm,
     color: Colors.text.secondary,
     letterSpacing: Typography.wide,
     textAlign: 'center',
-    marginBottom: Spacing.sm,
-  },
-  tagline: {
-    fontSize: Typography.xs,
-    color: Colors.text.muted,
-    letterSpacing: Typography.wider,
-    textTransform: 'uppercase',
     marginBottom: Spacing['4xl'],
   },
   dotsRow: {
